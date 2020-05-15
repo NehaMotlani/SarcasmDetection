@@ -10,6 +10,10 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
 from keras import backend as K
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import GridSearchCV
+from keras.models import Sequential
+from keras.layers import Dense, Conv1D, Flatten, Dropout
 
 def recall_m(y_true, y_pred):
     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
@@ -33,7 +37,7 @@ pd.options.mode.chained_assignment = None
 
 df = pd.read_json('Sarcasm_Headlines_Dataset_v2.json',lines=True,encoding='utf-8')
 df = df.drop('article_link', 1)
-# df = df.head()
+df = df.head()
 n = len(df)
 
 print('Removing noise and puntuations')
@@ -71,26 +75,34 @@ y = np.array(y)
 
 print('Splitting the dataset')
 X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=0)
-print(X_train.shape)
-print(y_train.shape)
-print(X_test.shape)
-print(y_test.shape)
 
 print('Building the model')
-from keras.models import Sequential
-from keras.layers import Dense, Conv1D, Flatten
-#create model
-model = Sequential()
-#add model layers
-model.add(Conv1D(128, kernel_size=3, activation='relu',input_shape=(106, 25)))
-model.add(Conv1D(64, kernel_size=3, activation='relu'))
-model.add(Conv1D(32, kernel_size=3, activation='relu'))
-model.add(Flatten())
-model.add(Dense(1,activation='sigmoid'))
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['acc',f1_m,precision_m, recall_m])
-model.summary()
-print(y_train)
-#train the model
-# model.fit(X_train[0, :, :], y_train[0], validation_data=(X_test, y_test), epochs=3,batch_size=1)
-model.fit(X_train, y_train, batch_size=16, epochs=6)
-loss, accuracy, f1_score, precision, recall = model.evaluate(X_test, y_test, verbose=0)
+activation = 'relu'
+dropout_rate = 0.1
+def create_model(activation,dropout_rate):
+	#create model
+	model = Sequential()
+	#add model layers
+	model.add(Conv1D(128, kernel_size=3, activation=activation,input_shape=(10, 25)))
+	model.add(Conv1D(64, kernel_size=3, activation=activation))
+	model.add(Dropout(dropout_rate))
+	model.add(Conv1D(32, kernel_size=3, activation=activation))
+	model.add(Flatten())
+	model.add(Dense(1,activation='sigmoid'))
+	model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['acc',f1_m,precision_m, recall_m])
+	# model.summary()
+	#train the model
+	model.fit(X_train, y_train, batch_size=16, epochs=6)
+	loss, accuracy, f1_score, precision, recall = model.evaluate(X_test, y_test, verbose=0)
+
+print('Finding the best hyperpapamerters')
+model = KerasClassifier(build_fn=create_model, epochs=5, batch_size=10, verbose=0)
+epochs = [4,5,6]
+batch_size = [8,16,32]
+activation = ['softmax', 'softplus', 'softsign', 'relu', 'tanh', 'sigmoid', 'hard_sigmoid', 'linear']
+dropout_rate = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+param_grid = dict(batch_size=batch_size, epochs=epochs,activation=activation,dropout_rate=dropout_rate)
+grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=-1, cv=3,scoring="accuracy")
+grid_result = grid.fit(X_train, y_train)
+# summarize results
+print("Best: %f using %s" % (grid_result.best_score_, grid_result.best_params_))
